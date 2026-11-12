@@ -1,0 +1,10 @@
+{
+  "payloadType": "application/vnd.weblibre.update-catalogue.v1+json",
+  "payload": "eyJzY2hlbWFWZXJzaW9uIjoxLCJzY29wZSI6eyJwYWNrYWdlSWQiOiJldS53ZWJsaWJyZS5nZWNrby5hbHBoYSJ9LCJyZXZpc2lvbiI6MSwiaXNzdWVkQXQiOiIyMDI2LTExLTEyVDEwOjI3OjA2WiIsImV4cGlyZXNBdCI6IjIwMjYtMTItMTJUMTA6Mjc6MDZaIiwicmVsZWFzZXMiOltdLCJhZHZpc29yaWVzIjpbXX0=",
+  "signatures": [
+    {
+      "keyid": "wl-meta-2026a",
+      "sig": "Kq0BWl9rt3aqGmjxrM+vgCWsYzaJB9Shxxvr9ijziMeYzBd8YkctLR9e6L2h3uo5ozenTPq588WZQpQVRuQsBw=="
+    }
+  ]
+}
