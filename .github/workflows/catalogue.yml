@@ -1,0 +1,124 @@
+# Builds, signs and publishes the update catalogues served at
+# https://updates.weblibre.eu. See README.md.
+#
+# `sign` holds the metadata key (environment `update-metadata`, restricted to
+# main) and pushes a new catalogue only when one is needed. `deploy` holds no
+# secret, always runs, and makes the live site serve the verified catalogues
+# at the head of main as it is when the job starts. Re-running an old run
+# therefore deploys the newest head, never an old one.
+
+name: Catalogue
+
+on:
+  schedule:
+    - cron: "17 * * * *" # hourly: how a new app release is found
+  workflow_dispatch:
+    inputs:
+      refresh:
+        description: Re-sign even if nothing changed
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    # A withdrawal, advisory or key change publishes at once. The bot's own
+    # commits only touch site/ and do not trigger a run.
+    paths: ["policy/**", "keys/**"]
+
+permissions: {}
+
+# One run at a time; GitHub keeps at most one waiting and drops older waiting
+# ones. Every run rediscovers everything, so a dropped run loses nothing.
+concurrency:
+  group: catalogue-publish
+  cancel-in-progress: false
+
+jobs:
+  sign:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: update-metadata
+    permissions:
+      contents: read
+    steps:
+      # The head of main as it is now, over SSH with the deploy key: the
+      # ruleset lets only that key push to main without a pull request.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          ssh-key: ${{ secrets.CATALOGUE_DEPLOY_KEY }}
+
+      - name: Test the tool
+        run: python3 -m unittest discover -s tools
+
+      - name: Build and sign
+        id: update
+        env:
+          METADATA_KEY_ONLINE: ${{ secrets.METADATA_KEY_ONLINE }}
+          GITHUB_TOKEN: ${{ github.token }}
+          REFRESH: ${{ inputs.refresh && '--refresh' || '' }}
+        run: |
+          set +e
+          python3 tools/update_catalogue.py update \
+            --key-env METADATA_KEY_ONLINE \
+            --commit-message "$RUNNER_TEMP/commit-message" \
+            $REFRESH
+          status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          # 2: published, but a release was excluded (reported after pushing).
+          if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then exit "$status"; fi
+
+      - name: Commit and push
+        if: steps.update.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add site
+          git commit --file "$RUNNER_TEMP/commit-message"
+          # A plain fast-forward. If main moved since this job started, the
+          # push fails and nothing is published; the next run starts over.
+          git push origin HEAD:main
+
+      - name: Report excluded releases
+        if: steps.update.outputs.status == '2'
+        run: |
+          echo "::error::A release was excluded from the catalogue; see the errors in 'Build and sign'."
+          exit 1
+
+  deploy:
+    needs: sign
+    # Also when `sign` did nothing or failed: this job is the repair path.
+    if: always() && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment:
+      name: github-pages
+      url: https://updates.weblibre.eu/
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Verify the catalogues at the head
+        run: python3 tools/update_catalogue.py verify site
+
+      - name: Compare with the live site
+        id: served
+        run: python3 tools/update_catalogue.py served --site site
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        if: steps.served.outputs.differs == 'true'
+        with:
+          path: site
+
+      - uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+        if: steps.served.outputs.differs == 'true'
+
+      - name: Check that the live site serves the head
+        if: steps.served.outputs.differs == 'true'
+        run: python3 tools/update_catalogue.py served --site site --require-same --wait 900
