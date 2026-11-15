@@ -25,8 +25,10 @@ import json
 import os
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import update_catalogue as uc
 
@@ -522,6 +524,81 @@ class ManifestCheckTest(unittest.TestCase):
             with self.subTest(key):
                 with self.assertRaises(uc.Rejected):
                     uc.ApkVerifier.check_manifest({**self.manifest, key: value}, self.target, self.release, STABLE)
+
+    def test_version_name_is_exactly_the_tags(self) -> None:
+        alpha_target = {**self.target, "id": "v0.50.0-alpha-2/github/alpha/skia/arm64-v8a", "track": "alpha"}
+        alpha_manifest = {**self.manifest, "packageId": ALPHA, "track": "alpha"}
+        accepted = [
+            (self.manifest, self.target, "0.50.0", STABLE),
+            ({**alpha_manifest, "versionName": "0.50.0-alpha-2-alpha"}, alpha_target, "0.50.0-alpha-2", ALPHA),
+        ]
+        for manifest, target, app_version, package in accepted:
+            with self.subTest(app_version):
+                uc.ApkVerifier.check_manifest(manifest, target, {**self.release, "appVersion": app_version}, package)
+
+        rejected = [
+            # A withdrawn v0.50.0 offered again under a shorter tag.
+            (self.manifest, self.target, "0.5", STABLE),
+            (self.manifest, self.target, "0.50", STABLE),
+            ({**alpha_manifest, "versionName": "0.50.0-alpha-12-alpha"}, alpha_target, "0.50.0-alpha-1", ALPHA),
+            # The alpha suffix on the stable track, and its absence on alpha.
+            ({**self.manifest, "versionName": "0.50.0-alpha"}, self.target, "0.50.0", STABLE),
+            ({**alpha_manifest, "versionName": "0.50.0-alpha-2"}, alpha_target, "0.50.0-alpha-2", ALPHA),
+        ]
+        for manifest, target, app_version, package in rejected:
+            with self.subTest(f"{manifest['versionName']} under {app_version}"):
+                with self.assertRaises(uc.Rejected):
+                    uc.ApkVerifier.check_manifest(manifest, target, {**self.release, "appVersion": app_version}, package)
+
+
+class ApkBadgingTest(unittest.TestCase):
+    """Exercise APK checks without skipping them when no real APK is provided."""
+
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.apk = Path(directory.name) / "app-stable-arm64-v8a-release.apk"
+        with zipfile.ZipFile(self.apk, "w") as archive:
+            archive.writestr(uc.MANIFEST_ENTRY, json.dumps(ManifestCheckTest.manifest))
+        self.verifier = uc.ApkVerifier(Path(directory.name))
+        self.target = {**ManifestCheckTest.target, "minSdk": 26}
+
+    def check(self, sdk_line: str) -> None:
+        badging = (
+            "package: name='eu.weblibre.gecko' versionCode='473' versionName='0.50.0'\n"
+            f"{sdk_line}\ntargetSdkVersion:'37'\nnative-code: 'arm64-v8a'\n"
+        )
+        with patch.object(self.verifier, "_run", side_effect=[
+            f"Signer #1 certificate SHA-256 digest: {uc.PRODUCTION_CERT_SHA256}\n",
+            badging,
+        ]):
+            self.verifier.check(self.apk, self.target, ManifestCheckTest.release, STABLE)
+
+    def test_legacy_sdk_label(self) -> None:
+        self.check("sdkVersion:'26'")
+
+    def test_modern_sdk_label(self) -> None:
+        self.check("minSdkVersion:'26'")
+
+    def test_sdk_whitespace(self) -> None:
+        self.check("minSdkVersion: '26'")
+
+    def test_missing_minimum_sdk_is_rejected(self) -> None:
+        # targetSdkVersion must never substitute for a missing minimum SDK.
+        with self.assertRaisesRegex(uc.Rejected, "minSdk None"):
+            self.check("")
+
+    def test_mismatched_minimum_sdk_is_rejected(self) -> None:
+        for label in ("sdkVersion", "minSdkVersion"):
+            with self.subTest(label):
+                with self.assertRaisesRegex(uc.Rejected, "minSdk 27, target says 26"):
+                    self.check(f"{label}:'27'")
+
+    def test_nonnumeric_minimum_sdk_is_rejected(self) -> None:
+        for label in ("sdkVersion", "minSdkVersion"):
+            with self.subTest(label):
+                with self.assertRaisesRegex(uc.Rejected, "minSdk None"):
+                    self.check(f"{label}:'Preview'")
 
 
 @unittest.skipUnless(os.environ.get("WEBLIBRE_TEST_APK"), "set WEBLIBRE_TEST_APK to a real APK")
