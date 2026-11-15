@@ -723,7 +723,8 @@ class ApkVerifier:
 
         badging = self._run(str(self.aapt2), "dump", "badging", str(apk))
         package = re.search(r"package: name='([^']+)' versionCode='(\d+)'", badging)
-        sdk = re.search(r"sdkVersion:'(\d+)'", badging)
+        # Recent aapt2 versions use minSdkVersion; older tools use sdkVersion.
+        sdk = re.search(r"^(?:minSdkVersion|sdkVersion):\s*'(\d+)'", badging, re.MULTILINE)
         native = re.search(r"native-code: (.+)", badging)
         abis = sorted(re.findall(r"'([^']+)'", native.group(1))) if native else []
         if not package or package.group(1) != package_id:
@@ -752,6 +753,11 @@ class ApkVerifier:
             "track": target["track"],
             "renderer": target["renderer"],
             "logicalReleaseSequence": release["logicalReleaseSequence"],
+            # Exactly the tag's version plus the alpha track's suffix, as the
+            # app repository's verify_artifacts.py checks. A prefix would let
+            # a withdrawn release's APKs back in under a shorter tag (v0.50.0
+            # under v0.5, alpha-12 under alpha-1).
+            "versionName": release["appVersion"] + ("-alpha" if target["track"] == "alpha" else ""),
         }
         for key, value in expected.items():
             if manifest.get(key) != value:
@@ -759,8 +765,6 @@ class ApkVerifier:
         codes = manifest.get("abiVersionCodes")
         if not isinstance(codes, dict) or codes.get(target["abi"]) != target["versionCode"]:
             raise Rejected("build manifest abiVersionCodes disagree with the target")
-        if not str(manifest.get("versionName", "")).startswith(release["appVersion"]):
-            raise Rejected(f"build manifest versionName {manifest.get('versionName')!r}")
         if manifest.get("components") != release.get("components"):
             raise Rejected("build manifest components differ from release.json")
 
