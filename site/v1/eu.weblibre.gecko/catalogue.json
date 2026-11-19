@@ -1,10 +1,10 @@
 {
   "payloadType": "application/vnd.weblibre.update-catalogue.v1+json",
-  "payload": "eyJzY2hlbWFWZXJzaW9uIjoxLCJzY29wZSI6eyJwYWNrYWdlSWQiOiJldS53ZWJsaWJyZS5nZWNrbyJ9LCJyZXZpc2lvbiI6MSwiaXNzdWVkQXQiOiIyMDI2LTExLTEyVDEwOjI3OjA2WiIsImV4cGlyZXNBdCI6IjIwMjYtMTItMTJUMTA6Mjc6MDZaIiwicmVsZWFzZXMiOltdLCJhZHZpc29yaWVzIjpbXX0=",
+  "payload": "eyJzY2hlbWFWZXJzaW9uIjoxLCJzY29wZSI6eyJwYWNrYWdlSWQiOiJldS53ZWJsaWJyZS5nZWNrbyJ9LCJyZXZpc2lvbiI6MiwiaXNzdWVkQXQiOiIyMDI2LTExLTE5VDEzOjAwOjI4WiIsImV4cGlyZXNBdCI6IjIwMjYtMTItMTlUMTM6MDA6MjhaIiwicmVsZWFzZXMiOltdLCJhZHZpc29yaWVzIjpbXX0=",
   "signatures": [
     {
       "keyid": "wl-meta-2026a",
-      "sig": "obHl1NPinfZjQTEMD2EGuxAwWXwKN99px/Q9OqssafmyCAjxLXgsiz/glfVSEouzdcqahrWmke1DsHNxXvwzAw=="
+      "sig": "+ciG+e4Z3j+0ooyUJNGRVci5N1VPWy4Leb2Hwdvkj+0j8U/1CMroAcThxFskxKFIsMGwFENGlbqzqGkDWrERCA=="
     }
   ]
 }
